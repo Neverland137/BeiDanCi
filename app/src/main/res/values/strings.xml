@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">背单词</string>
+    <string name="select_colpkg">选择词库 (.colpkg)</string>
+    <string name="start_vocab">开始背单词</string>
+    <string name="stop_vocab">停止背单词</string>
+    <string name="parsing">解析中…</string>
+    <string name="parse_success">解析完成，共 %d 个单词</string>
+    <string name="parse_error">解析失败：%s</string>
+    <string name="no_words">未找到橙/红旗标单词，请先在 Anki 中标记</string>
+    <string name="service_notification_channel">背单词服务</string>
+    <string name="service_notification_title">背单词运行中</string>
+    <string name="service_notification_text">每 5–7 分钟将弹出单词复习</string>
+</resources>
