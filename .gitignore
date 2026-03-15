@@ -1,0 +1,19 @@
+# 确保 .github 工作流被提交（不要忽略）
+!.github/
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android
+*.apk
+*.ap_
+*.aab
+local.properties
+*.iml
+.idea/
+.DS_Store
+
+# Kotlin
+*.class
