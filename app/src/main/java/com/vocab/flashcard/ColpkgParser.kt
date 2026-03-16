@@ -3,6 +3,7 @@ package com.vocab.flashcard
 import android.database.sqlite.SQLiteDatabase
 import com.github.luben.zstd.Zstd
 import java.io.File
+import java.io.IOException
 import java.util.zip.ZipFile
 
 /**
@@ -52,11 +53,7 @@ object ColpkgParser {
         try {
             val compressed = zip.getInputStream(dbEntry).use { it.readBytes() }
             val dbBytes = if (dbEntry.name.endsWith(".anki21b")) {
-                // zstd-jni 1.5.6+ API: decompress(dst, src) 返回实际解压字节数
-                val maxSize = 256 * 1024 * 1024
-                val buffer = ByteArray(maxSize)
-                val len = Zstd.decompress(buffer, compressed)
-                buffer.copyOf(len.toInt())
+                decompressZstd(compressed)
             } else {
                 compressed
             }
@@ -66,6 +63,28 @@ object ColpkgParser {
             tempDb.delete()
             zip.close()
         }
+    }
+
+    /**
+     * 解压 zstd 数据，带错误校验，避免原生崩溃导致进程退出
+     */
+    private fun decompressZstd(compressed: ByteArray): ByteArray {
+        if (compressed.size < 4) throw IOException("数据过短，非有效 zstd 格式")
+        // zstd 魔数: 0x28 0xB5 0x2F 0xFD
+        if (compressed[0].toInt() and 0xFF != 0x28 || compressed[1].toInt() and 0xFF != 0xB5 ||
+            compressed[2].toInt() and 0xFF != 0x2F || compressed[3].toInt() and 0xFF != 0xFD) {
+            throw IOException("非 zstd 压缩格式，请确认词库为 Anki 24 导出的 .colpkg")
+        }
+        val maxSize = 128 * 1024 * 1024  // 128MB，兼顾大词库与低端机
+        val buffer = ByteArray(maxSize)
+        val len = Zstd.decompress(buffer, compressed)
+        if (Zstd.isError(len)) {
+            throw IOException("Zstd 解压失败: ${Zstd.getErrorName(len)}")
+        }
+        if (len <= 0 || len > maxSize) {
+            throw IOException("解压结果异常: size=$len")
+        }
+        return buffer.copyOf(len.toInt())
     }
 
     private fun parseFlaggedFromDb(dbPath: String): List<Pair<String, String>> {
