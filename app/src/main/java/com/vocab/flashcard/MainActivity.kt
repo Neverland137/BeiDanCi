@@ -3,135 +3,123 @@ package com.vocab.flashcard
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.widget.Button
-import android.widget.TextView
+import android.provider.Settings
 import android.widget.Toast
+import java.io.File
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import com.vocab.flashcard.databinding.ActivityMainBinding
 
-/**
- * 主界面 Activity
- * 功能：选择 .colpkg 文件、解析词库、启动/停止背单词服务
- */
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var tvStatus: TextView
-    private lateinit var btnSelectColpkg: Button
-    private lateinit var btnStartStop: Button
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var repo: VocabRepository
 
-    private var vocabRepository: VocabRepository? = null
-    private var isServiceRunning = false
-
-    // 文件选择器：选择 .colpkg 文件
-    private val filePickerLauncher = registerForActivityResult(
+    private val pickFile = registerForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            parseColpkg(uri)
-        }
+    ) { uri: Uri? ->
+        uri?.let { loadColpkg(it) }
     }
 
-    // 通知权限（Android 13+ 必需，否则前台服务通知无法显示）
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            doStartVocabService()
-        } else {
-            Toast.makeText(this, "需要通知权限才能运行背单词服务", Toast.LENGTH_LONG).show()
-        }
-    }
+    private val overlayPermission = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* 用户返回后刷新状态 */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        repo = VocabRepository(this)
 
-        tvStatus = findViewById(R.id.tvStatus)
-        btnSelectColpkg = findViewById(R.id.btnSelectColpkg)
-        btnStartStop = findViewById(R.id.btnStartStop)
+        requestPermissionsIfNeeded()
+        binding.btnSelectColpkg.setOnClickListener { pickFile.launch("*/*") }
+        binding.btnStart.setOnClickListener { startVocabService() }
+        binding.btnStop.setOnClickListener { stopVocabService() }
+        updateUi()
+    }
 
-        btnSelectColpkg.setOnClickListener {
-            filePickerLauncher.launch("*/*")
-        }
-
-        btnStartStop.setOnClickListener {
-            if (isServiceRunning) {
-                stopVocabService()
-            } else {
-                startVocabService()
+    private fun requestPermissionsIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
             }
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        isServiceRunning = VocabService.isRunning
-        updateStartStopButton()
-        // 若之前已解析过词库且词库非空，恢复「开始」按钮可用状态
-        if (!btnStartStop.isEnabled && !VocabRepository(this).isEmpty()) {
-            btnStartStop.isEnabled = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            overlayPermission.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = Uri.parse("package:$packageName")
+            })
         }
     }
 
-    private fun parseColpkg(uri: android.net.Uri) {
-        tvStatus.text = getString(R.string.parsing)
-        btnSelectColpkg.isEnabled = false
-
-        // 在后台线程解析，避免阻塞 UI
+    private fun loadColpkg(uri: Uri) {
+        binding.btnSelectColpkg.isEnabled = false
+        binding.tvStatus.text = getString(R.string.parsing)
         Thread {
             try {
-                val repo = VocabRepository(this)
-                val count = ColpkgParser.parse(this, uri, repo)
+                val path = copyUriToTemp(uri) ?: run {
+                    runOnUiThread { showError("无法读取文件") }
+                    return@Thread
+                }
+                val words = ColpkgParser.parseFlaggedWords(path)
                 runOnUiThread {
-                    vocabRepository = repo
-                    tvStatus.text = getString(R.string.parse_success, count)
-                    btnSelectColpkg.isEnabled = true
-                    btnStartStop.isEnabled = count > 0
-                    if (count == 0) {
+                    if (words.isEmpty()) {
+                        binding.tvStatus.text = getString(R.string.no_words)
                         Toast.makeText(this, R.string.no_words, Toast.LENGTH_LONG).show()
+                    } else {
+                        repo.clearAndInsert(words)
+                        binding.tvStatus.text = getString(R.string.parse_success, words.size)
+                        Toast.makeText(this, getString(R.string.parse_success, words.size), Toast.LENGTH_SHORT).show()
                     }
+                    binding.btnSelectColpkg.isEnabled = true
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    tvStatus.text = getString(R.string.parse_error, e.message)
-                    btnSelectColpkg.isEnabled = true
-                    Toast.makeText(this, e.message, Toast.LENGTH_LONG).show()
+                    showError(e.message ?: "解析失败")
+                    binding.btnSelectColpkg.isEnabled = true
                 }
             }
         }.start()
     }
 
-    private fun startVocabService() {
-        // Android 13+ 需要通知权限才能显示前台服务通知
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            when {
-                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ->
-                    doStartVocabService()
-                else -> notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        } else {
-            doStartVocabService()
+    private fun copyUriToTemp(uri: Uri): String? {
+        return contentResolver.openInputStream(uri)?.use { input ->
+            val temp = File.createTempFile("colpkg", ".colpkg", cacheDir)
+            temp.outputStream().use { output -> input.copyTo(output) }
+            temp.absolutePath
         }
     }
 
-    private fun doStartVocabService() {
-        val intent = Intent(this, VocabService::class.java)
-        startForegroundService(intent)
-        isServiceRunning = true
-        updateStartStopButton()
+    private fun showError(msg: String) {
+        binding.tvStatus.text = getString(R.string.parse_error, msg)
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    }
+
+    private fun startVocabService() {
+        if (repo.isEmpty()) {
+            Toast.makeText(this, R.string.no_words, Toast.LENGTH_LONG).show()
+            return
+        }
+        startForegroundService(Intent(this, VocabService::class.java))
+        updateUi()
     }
 
     private fun stopVocabService() {
-        val intent = Intent(this, VocabService::class.java)
-        stopService(intent)
-        isServiceRunning = false
-        updateStartStopButton()
+        stopService(Intent(this, VocabService::class.java))
+        updateUi()
     }
 
-    private fun updateStartStopButton() {
-        btnStartStop.text = if (isServiceRunning) getString(R.string.stop_vocab) else getString(R.string.start_vocab)
+    private fun updateUi() {
+        val running = VocabService.isRunning
+        binding.btnStart.isEnabled = !running && !repo.isEmpty()
+        binding.btnStop.isEnabled = running
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateUi()
     }
 }

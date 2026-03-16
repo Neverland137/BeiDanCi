@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "infiniteloop": {
+      "command": "python",
+      "args": ["D:/CursorInfiniteLoopMCP/server.py"]
+    }
+  }
+}

@@ -1,56 +1,38 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 存储权限：用于选择 .colpkg 文件 -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_DOCUMENTS" />
-
-    <!-- 前台服务权限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
-    <!-- 通知权限（Android 13+ 必需） -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_launcher_foreground"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/ic_launcher_foreground"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VocabFlashcard"
-        tools:targetApi="34">
-
-        <!-- 主界面 -->
+        android:theme="@style/Theme.VocabFlashcard">
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.VocabFlashcard">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <!-- 全屏弹窗 Activity -->
         <activity
             android:name=".PopupActivity"
             android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.VocabFlashcard.Popup" />
-
-        <!-- 前台服务：定时弹窗 -->
         <service
             android:name=".VocabService"
-            android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="vocab_flashcard" />
+                android:value="vocab_flashcard_popup" />
         </service>
     </application>
+
 </manifest>
