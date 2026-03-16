@@ -42,5 +42,5 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-    implementation("com.github.luben:zstd-jni:1.5.6-11")
+    implementation("com.github.luben:zstd-jni:1.5.6-10")
 }
