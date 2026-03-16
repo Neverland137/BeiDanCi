@@ -1,13 +1,5 @@
-<<<<<<< HEAD
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/primary" />
     <item android:drawable="@drawable/ic_launcher_foreground" />
 </layer-list>
-=======
-<?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/primary" />
-    <item android:drawable="@drawable/ic_launcher_foreground" />
-</layer-list>
->>>>>>> f6e29ecc53d18f73879112d823be8df23faeea30
