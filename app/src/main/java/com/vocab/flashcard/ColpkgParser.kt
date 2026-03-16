@@ -1,14 +1,20 @@
 package com.vocab.flashcard
 
 import android.database.sqlite.SQLiteDatabase
+import com.github.luben.zstd.Zstd
 import java.io.File
 import java.util.zip.ZipFile
 
 /**
  * 解析 Anki .colpkg 文件，筛选橙/红旗标单词
  *
- * Anki 旗标：cards.flags % 8 = 0无/1红/2橙/3绿/4蓝
- * notes.flds 用 0x1f 分隔各字段，通常 [0]=单词 [1]=词义
+ * 支持三种格式：
+ * - collection.anki21b（Anki 24 默认，zstd 压缩）
+ * - collection.anki21（Legacy 2，勾选「支持旧版」时）
+ * - collection.anki2（Legacy 1）
+ *
+ * Anki 旗标：cards.flags 1=红 2=橙
+ * notes.flds 用 0x1f 分隔，通常 [0]=单词 [1]=词义
  */
 object ColpkgParser {
 
@@ -23,10 +29,20 @@ object ColpkgParser {
      */
     fun parseFlaggedWords(colpkgPath: String): List<Pair<String, String>> {
         val zip = ZipFile(File(colpkgPath))
-        // 新版 colpkg：collection.anki21 含真实数据，collection.anki2 仅为兼容空壳，必须优先用 anki21
+        // 优先级：anki21b(最新) > anki21(Legacy2) > anki2(Legacy1)
         val dbEntry = zip.entries().toList()
-            .filter { e -> !e.isDirectory && (e.name.endsWith(".anki2") || e.name.endsWith(".anki21")) }
-            .maxByOrNull { e -> if (e.name.endsWith(".anki21")) 1 else 0 }
+            .filter { e ->
+                !e.isDirectory && (e.name.endsWith(".anki2") ||
+                    e.name.endsWith(".anki21") ||
+                    e.name.endsWith(".anki21b"))
+            }
+            .maxByOrNull { e ->
+                when {
+                    e.name.endsWith(".anki21b") -> 2
+                    e.name.endsWith(".anki21") -> 1
+                    else -> 0
+                }
+            }
             ?: run {
                 zip.close()
                 return emptyList()
@@ -34,11 +50,13 @@ object ColpkgParser {
 
         val tempDb = File.createTempFile("anki_col", ".db")
         try {
-            zip.getInputStream(dbEntry).use { input ->
-                tempDb.outputStream().use { output ->
-                    input.copyTo(output)
-                }
+            val compressed = zip.getInputStream(dbEntry).use { it.readBytes() }
+            val dbBytes = if (dbEntry.name.endsWith(".anki21b")) {
+                Zstd.decompress(compressed)
+            } else {
+                compressed
             }
+            tempDb.writeBytes(dbBytes)
             return parseFlaggedFromDb(tempDb.absolutePath)
         } finally {
             tempDb.delete()
