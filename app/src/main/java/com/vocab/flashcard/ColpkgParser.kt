@@ -23,12 +23,14 @@ object ColpkgParser {
      */
     fun parseFlaggedWords(colpkgPath: String): List<Pair<String, String>> {
         val zip = ZipFile(File(colpkgPath))
-        val dbEntry = zip.entries().toList().find { e ->
-            !e.isDirectory && (e.name.endsWith(".anki2") || e.name.endsWith(".anki21"))
-        } ?: run {
-            zip.close()
-            return emptyList()
-        }
+        // 新版 colpkg：collection.anki21 含真实数据，collection.anki2 仅为兼容空壳，必须优先用 anki21
+        val dbEntry = zip.entries().toList()
+            .filter { e -> !e.isDirectory && (e.name.endsWith(".anki2") || e.name.endsWith(".anki21")) }
+            .maxByOrNull { e -> if (e.name.endsWith(".anki21")) 1 else 0 }
+            ?: run {
+                zip.close()
+                return emptyList()
+            }
 
         val tempDb = File.createTempFile("anki_col", ".db")
         try {
@@ -54,13 +56,13 @@ object ColpkgParser {
             val result = mutableListOf<Pair<String, String>>()
             val seen = mutableSetOf<String>()
 
-            // cards.flags % 8: 1=红, 2=橙（Anki 旗标定义）
+            // cards.flags: 1=红, 2=橙（新版直接存 1-7；旧版用 flags%8）
             // notes.flds: 字段用 0x1f 分隔，通常 [0]=单词 [1]=词义
             val cursor = db.rawQuery(
                 """
                 SELECT n.flds FROM notes n
                 INNER JOIN cards c ON c.nid = n.id
-                WHERE (c.flags % 8) IN ($FLAG_RED, $FLAG_ORANGE)
+                WHERE (c.flags = $FLAG_RED OR c.flags = $FLAG_ORANGE OR (c.flags % 8) IN ($FLAG_RED, $FLAG_ORANGE))
                 """.trimIndent(),
                 null
             )
