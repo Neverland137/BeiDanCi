@@ -52,7 +52,11 @@ object ColpkgParser {
         try {
             val compressed = zip.getInputStream(dbEntry).use { it.readBytes() }
             val dbBytes = if (dbEntry.name.endsWith(".anki21b")) {
-                Zstd.decompress(compressed)
+                // zstd-jni 1.5.6+ API: decompress(dst, src) 返回实际解压字节数
+                val maxSize = 256 * 1024 * 1024
+                val buffer = ByteArray(maxSize)
+                val len = Zstd.decompress(buffer, compressed)
+                buffer.copyOf(len.toInt())
             } else {
                 compressed
             }
