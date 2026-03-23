@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import java.io.File
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,6 +16,10 @@ import androidx.core.content.ContextCompat
 import com.vocab.flashcard.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "MainActivity"
+    }
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var repo: VocabRepository
@@ -59,11 +64,14 @@ class MainActivity : AppCompatActivity() {
         binding.btnSelectColpkg.isEnabled = false
         binding.tvStatus.text = getString(R.string.parsing)
         Thread {
+            var tempPath: String? = null
             try {
                 val path = copyUriToTemp(uri) ?: run {
                     runOnUiThread { showError("无法读取文件") }
                     return@Thread
                 }
+                tempPath = path
+                Log.i(TAG, "Start parsing imported colpkg: $path")
                 val words = ColpkgParser.parseFlaggedWords(path)
                 runOnUiThread {
                     if (words.isEmpty()) {
@@ -77,10 +85,13 @@ class MainActivity : AppCompatActivity() {
                     binding.btnSelectColpkg.isEnabled = true
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "Failed to import colpkg", e)
                 runOnUiThread {
                     showError(e.message ?: "解析失败")
                     binding.btnSelectColpkg.isEnabled = true
                 }
+            } finally {
+                tempPath?.let { File(it).delete() }
             }
         }.start()
     }
