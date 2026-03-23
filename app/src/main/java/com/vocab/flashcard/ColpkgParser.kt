@@ -1,7 +1,6 @@
 package com.vocab.flashcard
 
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
 import com.github.luben.zstd.ZstdInputStream
 import java.io.BufferedInputStream
 import java.io.File
@@ -35,17 +34,18 @@ object ColpkgParser {
      * @return List<Pair<word, meaning>>
      * @throws IOException 当词库损坏或数据库格式异常时抛出
      */
-    fun parseFlaggedWords(colpkgPath: String): List<Pair<String, String>> {
+    fun parseFlaggedWords(colpkgPath: String, workDir: File): List<Pair<String, String>> {
+        AppLog.info(TAG, "Parse started: $colpkgPath")
         ZipFile(File(colpkgPath)).use { zip ->
             val dbEntry = findDatabaseEntry(zip) ?: return emptyList()
-            val tempDb = File.createTempFile("anki_col", ".db")
+            val tempDb = File.createTempFile("anki_col", ".db", workDir)
             try {
                 extractDatabase(zip, dbEntry, tempDb)
                 val words = parseFlaggedFromDb(tempDb.absolutePath)
-                Log.i(TAG, "Parsed ${words.size} flagged words from ${dbEntry.name}")
+                AppLog.info(TAG, "Parsed ${words.size} flagged words from ${dbEntry.name}")
                 return words
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to parse $colpkgPath", e)
+            } catch (e: Throwable) {
+                AppLog.error(TAG, "Failed to parse $colpkgPath", e)
                 if (e is IOException) throw e
                 throw IOException("解析词库失败: ${e.message ?: "未知错误"}", e)
             } finally {
@@ -76,19 +76,55 @@ object ColpkgParser {
     }
 
     private fun extractDatabase(zip: ZipFile, dbEntry: ZipEntry, tempDb: File) {
-        zip.getInputStream(dbEntry).use { rawInput ->
-            val databaseInput = if (dbEntry.name.endsWith(".anki21b")) {
-                ZstdInputStream(BufferedInputStream(rawInput))
-            } else {
-                BufferedInputStream(rawInput)
+        if (dbEntry.name.endsWith(".anki21b")) {
+            if (tryExtractRawDatabase(zip, dbEntry, tempDb)) {
+                AppLog.info(TAG, "Detected raw SQLite data inside ${dbEntry.name}")
+                return
             }
-            databaseInput.use { input ->
-                tempDb.outputStream().buffered().use { output ->
-                    input.copyTo(output)
+            AppLog.info(TAG, "Raw read failed, retrying ${dbEntry.name} with zstd")
+            if (tryExtractZstdDatabase(zip, dbEntry, tempDb)) {
+                AppLog.info(TAG, "Zstd decompression succeeded for ${dbEntry.name}")
+                return
+            }
+            throw IOException("无法解码 ${dbEntry.name}，既不是 SQLite 数据，也无法按 zstd 解压")
+        }
+        copyEntryToFile(zip, dbEntry, tempDb)
+        validateSqliteDatabase(tempDb, dbEntry.name)
+    }
+
+    private fun tryExtractRawDatabase(zip: ZipFile, dbEntry: ZipEntry, tempDb: File): Boolean {
+        return try {
+            copyEntryToFile(zip, dbEntry, tempDb)
+            validateSqliteDatabase(tempDb, dbEntry.name)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun tryExtractZstdDatabase(zip: ZipFile, dbEntry: ZipEntry, tempDb: File): Boolean {
+        return try {
+            zip.getInputStream(dbEntry).use { rawInput ->
+                ZstdInputStream(BufferedInputStream(rawInput)).use { input ->
+                    tempDb.outputStream().buffered().use { output ->
+                        input.copyTo(output)
+                    }
                 }
             }
+            validateSqliteDatabase(tempDb, dbEntry.name)
+            true
+        } catch (t: Throwable) {
+            AppLog.error(TAG, "Zstd decode failed for ${dbEntry.name}", t)
+            false
         }
-        validateSqliteDatabase(tempDb, dbEntry.name)
+    }
+
+    private fun copyEntryToFile(zip: ZipFile, dbEntry: ZipEntry, target: File) {
+        zip.getInputStream(dbEntry).use { input ->
+            target.outputStream().buffered().use { output ->
+                input.copyTo(output)
+            }
+        }
     }
 
     private fun validateSqliteDatabase(tempDb: File, entryName: String) {

@@ -22,11 +22,23 @@ class ColpkgParserTest {
 
     private val fieldSep = '\u001f'
 
+    private fun parse(zipFile: File): List<Pair<String, String>> {
+        val workDir = File.createTempFile("parser_test", "").apply {
+            delete()
+            mkdirs()
+        }
+        return try {
+            ColpkgParser.parseFlaggedWords(zipFile.absolutePath, workDir)
+        } finally {
+            workDir.deleteRecursively()
+        }
+    }
+
     @Test
     fun parseFlaggedWords_emptyZip_returnsEmptyList() {
         val zipFile = createZipWithNoAnkiDb()
         try {
-            val result = ColpkgParser.parseFlaggedWords(zipFile.absolutePath)
+            val result = parse(zipFile)
             assertTrue(result.isEmpty())
         } finally {
             zipFile.delete()
@@ -42,7 +54,7 @@ class ColpkgParserTest {
             )
         )
         try {
-            val result = ColpkgParser.parseFlaggedWords(zipFile.absolutePath)
+            val result = parse(zipFile)
             assertEquals(2, result.size)
             assertEquals("apple", result[0].first)
             assertEquals("苹果", result[0].second)
@@ -59,7 +71,7 @@ class ColpkgParserTest {
             listOf("hello" to "你好")
         )
         try {
-            val result = ColpkgParser.parseFlaggedWords(zipFile.absolutePath)
+            val result = parse(zipFile)
             assertEquals(1, result.size)
             assertEquals("hello", result[0].first)
             assertEquals("你好", result[0].second)
@@ -72,7 +84,7 @@ class ColpkgParserTest {
     fun parseFlaggedWords_invalidZstdMagic_throwsIOException() {
         val zipFile = createZipWithInvalidAnki21b()
         try {
-            ColpkgParser.parseFlaggedWords(zipFile.absolutePath)
+            parse(zipFile)
         } finally {
             zipFile.delete()
         }
@@ -84,7 +96,7 @@ class ColpkgParserTest {
             listOf("<b>word</b>" to "<i>meaning</i>")
         )
         try {
-            val result = ColpkgParser.parseFlaggedWords(zipFile.absolutePath)
+            val result = parse(zipFile)
             assertEquals(1, result.size)
             assertEquals("word", result[0].first)
             assertEquals("meaning", result[0].second)
@@ -104,7 +116,7 @@ class ColpkgParserTest {
             flags = listOf(9, 10, 8)
         )
         try {
-            val result = ColpkgParser.parseFlaggedWords(zipFile.absolutePath)
+            val result = parse(zipFile)
             assertEquals(2, result.size)
             assertTrue(result.contains("apple" to "苹果"))
             assertTrue(result.contains("orange" to "橙子"))

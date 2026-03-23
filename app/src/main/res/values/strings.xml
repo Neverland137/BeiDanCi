@@ -8,6 +8,13 @@
     <string name="parse_success">解析完成，共 %d 个单词</string>
     <string name="parse_error">解析失败：%s</string>
     <string name="no_words">未找到橙/红旗标单词，请先在 Anki 中标记</string>
+    <string name="view_logs">查看日志</string>
+    <string name="copy_logs">复制日志</string>
+    <string name="no_logs">当前没有可显示的日志</string>
+    <string name="logs_copied">日志已复制到剪贴板</string>
+    <string name="last_crash_hint">检测到上次异常退出，可点击“查看日志”或“复制日志”</string>
+    <string name="clear_crash_log">清除崩溃日志</string>
+    <string name="crash_log_cleared">崩溃日志已清除</string>
     <string name="service_notification_channel">背单词服务</string>
     <string name="service_notification_title">背单词运行中</string>
     <string name="service_notification_text">每 5–7 分钟将弹出单词复习</string>
