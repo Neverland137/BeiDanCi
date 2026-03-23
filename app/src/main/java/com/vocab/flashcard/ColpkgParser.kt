@@ -113,6 +113,9 @@ object ColpkgParser {
             }
             validateSqliteDatabase(tempDb, dbEntry.name)
             true
+        } catch (t: UnsatisfiedLinkError) {
+            AppLog.error(TAG, "Zstd native library is missing from APK", t)
+            throw IOException("APK 未包含 zstd 原生库，请重新安装修复后的版本", t)
         } catch (t: Throwable) {
             AppLog.error(TAG, "Zstd decode failed for ${dbEntry.name}", t)
             false

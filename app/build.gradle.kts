@@ -46,10 +46,12 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-    implementation("com.github.luben:zstd-jni:1.5.6-10")
+    // Android 端必须使用 AAR，才能把各 ABI 的 .so 一起打进 APK。
+    implementation("com.github.luben:zstd-jni:1.5.6-10@aar")
 
     // 单元测试（JVM）
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.20")
     testImplementation("org.robolectric:robolectric:4.11.1")
+    testImplementation("com.github.luben:zstd-jni:1.5.6-10")
 }
