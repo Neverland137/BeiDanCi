@@ -7,7 +7,7 @@
     <string name="parsing">解析中…</string>
     <string name="parse_success">解析完成，共 %d 个单词</string>
     <string name="parse_error">解析失败：%s</string>
-    <string name="no_words">未找到橙/红旗标单词，请先在 Anki 中标记</string>
+    <string name="no_words">未找到带 marked 标签的单词，请先在 Anki 中添加 marked 标签</string>
     <string name="view_logs">查看日志</string>
     <string name="copy_logs">复制日志</string>
     <string name="no_logs">当前没有可显示的日志</string>

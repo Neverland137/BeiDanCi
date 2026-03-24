@@ -9,27 +9,26 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 
 /**
- * 解析 Anki .colpkg 文件，筛选橙/红旗标单词
+ * 解析 Anki .colpkg 文件，筛选带 marked 标签的单词
  *
  * 支持三种格式：
  * - collection.anki21b（Anki 24 默认，zstd 压缩）
  * - collection.anki21（Legacy 2，勾选「支持旧版」时）
  * - collection.anki2（Legacy 1）
  *
- * Anki 旗标：cards.flags 1=红 2=橙
+ * Anki 标签：notes.tags 中包含 marked
  * notes.flds 用 0x1f 分隔，通常 [0]=单词 [1]=词义
  */
 object ColpkgParser {
 
     private const val TAG = "ColpkgParser"
     private const val FIELD_SEP = '\u001f'  // 0x1f
-    private const val FLAG_RED = 1
-    private const val FLAG_ORANGE = 2
+    private const val MARKED_TAG = "marked"
     private const val SQLITE_HEADER = "SQLite format 3\u0000"
     private val HTML_TAG_REGEX = Regex("<[^>]+>")
 
     /**
-     * 从 colpkg 中解析橙/红旗标单词
+     * 从 colpkg 中解析带 marked 标签的单词
      * @param colpkgPath colpkg 文件路径
      * @return List<Pair<word, meaning>>
      * @throws IOException 当词库损坏或数据库格式异常时抛出
@@ -150,36 +149,80 @@ object ColpkgParser {
             SQLiteDatabase.OPEN_READONLY
         )
         try {
-            val result = mutableListOf<Pair<String, String>>()
-            val seen = mutableSetOf<String>()
-
-            // cards.flags: 低 3 位表示旗标颜色，1=红、2=橙
-            // notes.flds: 字段用 0x1f 分隔，通常 [0]=单词 [1]=词义
-            val cursor = db.rawQuery(
-                """
-                SELECT n.flds FROM notes n
-                INNER JOIN cards c ON c.nid = n.id
-                WHERE (c.flags & 7) IN (?, ?)
-                """.trimIndent(),
-                arrayOf(FLAG_RED.toString(), FLAG_ORANGE.toString())
-            )
-            cursor.use {
-                val fldsIdx = it.getColumnIndex("flds")
-                if (fldsIdx < 0) return emptyList()
-                while (it.moveToNext()) {
-                    val flds = it.getString(fldsIdx) ?: continue
-                    val parts = flds.split(FIELD_SEP)
-                    val word = parts.getOrNull(0)?.stripHtml()?.trim() ?: continue
-                    val meaning = parts.getOrNull(1)?.stripHtml()?.trim().orEmpty()
-                    if (word.isNotBlank() && word !in seen) {
-                        seen.add(word)
-                        result.add(Pair(word, meaning))
-                    }
-                }
-            }
-            return result
+            logDatabaseDiagnostics(db)
+            val taggedWords = queryWordsByMarkedTag(db)
+            AppLog.info(TAG, "Using marked tag strategy, matched ${taggedWords.size} words")
+            return taggedWords
         } finally {
             db.close()
+        }
+    }
+
+    private fun logDatabaseDiagnostics(db: SQLiteDatabase) {
+        val totalNotes = db.longForQuery("SELECT COUNT(*) FROM notes")
+        var markedNotes = 0L
+        db.rawQuery(
+            """
+            SELECT COUNT(*) FROM notes
+            WHERE TRIM(COALESCE(tags, '')) != ''
+            """.trimIndent(),
+            null
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                markedNotes = cursor.getLong(0)
+            }
+        }
+        AppLog.info(
+            TAG,
+            "Database diagnostics: notes=$totalNotes, notesWithAnyTags=$markedNotes"
+        )
+    }
+
+    private fun queryWordsByMarkedTag(db: SQLiteDatabase): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        val seen = mutableSetOf<String>()
+        db.rawQuery(
+            """
+            SELECT n.tags, n.flds FROM notes n
+            WHERE TRIM(COALESCE(n.tags, '')) != ''
+            """.trimIndent(),
+            null
+        ).use { cursor ->
+            val tagsIdx = cursor.getColumnIndex("tags")
+            val fldsIdx = cursor.getColumnIndex("flds")
+            if (tagsIdx < 0 || fldsIdx < 0) return emptyList()
+            while (cursor.moveToNext()) {
+                val tags = cursor.getString(tagsIdx).orEmpty()
+                if (!containsMarkedTag(tags)) continue
+                appendWord(cursor.getString(fldsIdx), seen, result)
+            }
+        }
+        return result
+    }
+
+    private fun appendWord(
+        flds: String?,
+        seen: MutableSet<String>,
+        result: MutableList<Pair<String, String>>
+    ) {
+        val parts = flds?.split(FIELD_SEP) ?: return
+        val word = parts.getOrNull(0)?.stripHtml()?.trim() ?: return
+        val meaning = parts.getOrNull(1)?.stripHtml()?.trim().orEmpty()
+        if (word.isNotBlank() && seen.add(word)) {
+            result.add(word to meaning)
+        }
+    }
+
+    private fun containsMarkedTag(rawTags: String): Boolean {
+        val tags = rawTags.trim().split(Regex("\\s+"))
+            .map { it.lowercase() }
+            .filter { it.isNotBlank() }
+        return tags.any { tag -> tag == MARKED_TAG || tag.startsWith("$MARKED_TAG::") }
+    }
+
+    private fun SQLiteDatabase.longForQuery(sql: String): Long {
+        rawQuery(sql, null).use { cursor ->
+            return if (cursor.moveToFirst()) cursor.getLong(0) else 0L
         }
     }
 

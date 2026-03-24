@@ -46,12 +46,14 @@ class ColpkgParserTest {
     }
 
     @Test
-    fun parseFlaggedWords_validAnki2_returnsFlaggedWords() {
+    fun parseFlaggedWords_markedTag_returnsWords() {
         val zipFile = createColpkgWithAnki2(
             listOf(
                 "apple" to "苹果",
                 "banana" to "香蕉"
-            )
+            ),
+            flags = listOf(0, 0),
+            tags = listOf(" marked ", " marked ")
         )
         try {
             val result = parse(zipFile)
@@ -66,9 +68,10 @@ class ColpkgParserTest {
     }
 
     @Test
-    fun parseFlaggedWords_validAnki21b_returnsFlaggedWords() {
+    fun parseFlaggedWords_validAnki21b_returnsMarkedWords() {
         val zipFile = createColpkgWithAnki21b(
-            listOf("hello" to "你好")
+            listOf("hello" to "你好"),
+            tags = listOf(" marked ")
         )
         try {
             val result = parse(zipFile)
@@ -93,7 +96,9 @@ class ColpkgParserTest {
     @Test
     fun parseFlaggedWords_stripsHtmlTags() {
         val zipFile = createColpkgWithAnki2(
-            listOf("<b>word</b>" to "<i>meaning</i>")
+            listOf("<b>word</b>" to "<i>meaning</i>"),
+            flags = listOf(0),
+            tags = listOf(" marked ")
         )
         try {
             val result = parse(zipFile)
@@ -106,20 +111,41 @@ class ColpkgParserTest {
     }
 
     @Test
-    fun parseFlaggedWords_supportsFlagBitmask() {
+    fun parseFlaggedWords_markedTagSupportsHierarchy() {
         val zipFile = createColpkgWithAnki2(
             words = listOf(
                 "apple" to "苹果",
                 "orange" to "橙子",
                 "skip" to "跳过"
             ),
-            flags = listOf(9, 10, 8)
+            flags = listOf(0, 0, 0),
+            tags = listOf(" marked::red ", " marked::orange ", " other ")
         )
         try {
             val result = parse(zipFile)
             assertEquals(2, result.size)
             assertTrue(result.contains("apple" to "苹果"))
             assertTrue(result.contains("orange" to "橙子"))
+        } finally {
+            zipFile.delete()
+        }
+    }
+
+    @Test
+    fun parseFlaggedWords_ignoresUnmarkedNotes() {
+        val zipFile = createColpkgWithAnki2(
+            words = listOf(
+                "apple" to "苹果",
+                "banana" to "香蕉"
+            ),
+            flags = listOf(0, 0),
+            tags = listOf(" marked ", " other ")
+        )
+        try {
+            val result = parse(zipFile)
+            assertEquals(1, result.size)
+            assertEquals("apple", result[0].first)
+            assertEquals("苹果", result[0].second)
         } finally {
             zipFile.delete()
         }
@@ -137,9 +163,10 @@ class ColpkgParserTest {
 
     private fun createColpkgWithAnki2(
         words: List<Pair<String, String>>,
-        flags: List<Int> = List(words.size) { 1 }
+        flags: List<Int> = List(words.size) { 0 },
+        tags: List<String> = List(words.size) { "" }
     ): File {
-        val dbBytes = createMinimalAnki2Db(words, flags)
+        val dbBytes = createMinimalAnki2Db(words, flags, tags)
         val zipFile = File.createTempFile("test_anki2", ".colpkg")
         ZipOutputStream(zipFile.outputStream()).use { zos ->
             zos.putNextEntry(ZipEntry("collection.anki2"))
@@ -149,8 +176,11 @@ class ColpkgParserTest {
         return zipFile
     }
 
-    private fun createColpkgWithAnki21b(words: List<Pair<String, String>>): File {
-        val dbBytes = createMinimalAnki2Db(words, List(words.size) { 1 })
+    private fun createColpkgWithAnki21b(
+        words: List<Pair<String, String>>,
+        tags: List<String> = List(words.size) { "" }
+    ): File {
+        val dbBytes = createMinimalAnki2Db(words, List(words.size) { 0 }, tags)
         val compressed = Zstd.compress(dbBytes)
         val zipFile = File.createTempFile("test_anki21b", ".colpkg")
         ZipOutputStream(zipFile.outputStream()).use { zos ->
@@ -172,8 +202,13 @@ class ColpkgParserTest {
         return zipFile
     }
 
-    private fun createMinimalAnki2Db(words: List<Pair<String, String>>, flags: List<Int>): ByteArray {
+    private fun createMinimalAnki2Db(
+        words: List<Pair<String, String>>,
+        flags: List<Int>,
+        tags: List<String>
+    ): ByteArray {
         require(words.size == flags.size) { "words 与 flags 数量必须一致" }
+        require(words.size == tags.size) { "words 与 tags 数量必须一致" }
         val dbFile = File.createTempFile("anki2", ".db")
         try {
             val db = android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(
@@ -181,7 +216,7 @@ class ColpkgParserTest {
                 null
             )
             db.execSQL("""
-                CREATE TABLE notes (id INTEGER PRIMARY KEY, flds TEXT)
+                CREATE TABLE notes (id INTEGER PRIMARY KEY, tags TEXT, flds TEXT)
             """.trimIndent())
             db.execSQL("""
                 CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER, flags INTEGER)
@@ -190,8 +225,8 @@ class ColpkgParserTest {
                 val noteId = index + 1L
                 val flds = "$word$fieldSep$meaning"
                 db.execSQL(
-                    "INSERT INTO notes (id, flds) VALUES (?, ?)",
-                    arrayOf(noteId, flds)
+                    "INSERT INTO notes (id, tags, flds) VALUES (?, ?, ?)",
+                    arrayOf(noteId, tags[index], flds)
                 )
                 db.execSQL(
                     "INSERT INTO cards (id, nid, flags) VALUES (?, ?, ?)",

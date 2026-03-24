@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteOpenHelper
 
 /**
  * 本地词库存储
- * 将解析出的橙/红旗标单词缓存到 SQLite，供定时弹窗随机抽取
+ * 将解析出的 marked 标签单词缓存到 SQLite，供定时弹窗随机抽取
  */
 class VocabRepository(context: Context) : SQLiteOpenHelper(
     context,
