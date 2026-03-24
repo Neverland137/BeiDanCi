@@ -17,6 +17,7 @@ class VocabService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var repo: VocabRepository
+    private lateinit var popupController: OverlayPopupController
     private var hasScheduledNextPopup = false
 
     private val showNextPopup = object : Runnable {
@@ -25,12 +26,7 @@ class VocabService : Service() {
             val pair = repo.getRandomWord()
             if (pair != null) {
                 AppLog.info("VocabService", "Showing popup for word: ${pair.first}")
-                val intent = Intent(this@VocabService, PopupActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra(PopupActivity.EXTRA_WORD, pair.first)
-                    putExtra(PopupActivity.EXTRA_MEANING, pair.second)
-                }
-                startActivity(intent)
+                popupController.show(pair.first, pair.second)
             }
             scheduleNext()
         }
@@ -39,6 +35,7 @@ class VocabService : Service() {
     override fun onCreate() {
         super.onCreate()
         repo = VocabRepository(this)
+        popupController = OverlayPopupController(this)
         isRunning = true
         AppLog.info("VocabService", "Service created")
     }
@@ -64,6 +61,7 @@ class VocabService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(showNextPopup)
         hasScheduledNextPopup = false
+        popupController.dismiss()
         isRunning = false
         AppLog.info("VocabService", "Service destroyed")
         super.onDestroy()
