@@ -87,4 +87,13 @@ class VocabRepository(context: Context) : SQLiteOpenHelper(
             return it.getInt(0) == 0
         }
     }
+
+    fun count(): Int {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT COUNT(*) FROM $TABLE", null)
+        cursor.use {
+            it.moveToFirst()
+            return it.getInt(0)
+        }
+    }
 }

@@ -17,11 +17,14 @@ class VocabService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var repo: VocabRepository
+    private var hasScheduledNextPopup = false
 
     private val showNextPopup = object : Runnable {
         override fun run() {
+            hasScheduledNextPopup = false
             val pair = repo.getRandomWord()
             if (pair != null) {
+                AppLog.info("VocabService", "Showing popup for word: ${pair.first}")
                 val intent = Intent(this@VocabService, PopupActivity::class.java).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     putExtra(PopupActivity.EXTRA_WORD, pair.first)
@@ -37,31 +40,48 @@ class VocabService : Service() {
         super.onCreate()
         repo = VocabRepository(this)
         isRunning = true
+        AppLog.info("VocabService", "Service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (repo.isEmpty()) {
+            AppLog.info("VocabService", "Stop self because repository is empty")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, createNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, createNotification())
         }
+        val reason = intent?.getStringExtra(EXTRA_REASON).orEmpty().ifBlank { "unknown" }
+        AppLog.info("VocabService", "Service started, reason=$reason")
         scheduleNext()
         return START_STICKY
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(showNextPopup)
+        hasScheduledNextPopup = false
         isRunning = false
+        AppLog.info("VocabService", "Service destroyed")
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun scheduleNext() {
+        if (hasScheduledNextPopup) {
+            return
+        }
         val minMs = TimeUnit.MINUTES.toMillis(5)
         val maxMs = TimeUnit.MINUTES.toMillis(7)
         val delay = minMs + (Math.random() * (maxMs - minMs)).toLong()
+        handler.removeCallbacks(showNextPopup)
         handler.postDelayed(showNextPopup, delay)
+        hasScheduledNextPopup = true
+        AppLog.info("VocabService", "Next popup scheduled in ${delay / 1000} seconds")
     }
 
     private fun createNotification(): Notification {
@@ -87,7 +107,9 @@ class VocabService : Service() {
     }
 
     companion object {
+        const val ACTION_START = "com.vocab.flashcard.action.START"
         const val CHANNEL_ID = "vocab_service"
+        const val EXTRA_REASON = "reason"
         private const val NOTIFICATION_ID = 1
         @Volatile
         var isRunning = false

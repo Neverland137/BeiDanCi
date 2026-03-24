@@ -45,12 +45,11 @@ class MainActivity : AppCompatActivity() {
 
         requestPermissionsIfNeeded()
         binding.btnSelectColpkg.setOnClickListener { pickFile.launch("*/*") }
-        binding.btnStart.setOnClickListener { startVocabService() }
-        binding.btnStop.setOnClickListener { stopVocabService() }
         binding.btnViewLog.setOnClickListener { showLogs() }
         binding.btnCopyLog.setOnClickListener { copyLogs() }
-        showPreviousCrashIfNeeded()
         updateUi()
+        showPreviousCrashIfNeeded()
+        ensureReviewRunning("activity_on_create")
     }
 
     private fun requestPermissionsIfNeeded() {
@@ -87,7 +86,8 @@ class MainActivity : AppCompatActivity() {
                         AppLog.info(TAG, "Import finished with zero flagged words")
                     } else {
                         repo.clearAndInsert(words)
-                        binding.tvStatus.text = getString(R.string.parse_success, words.size)
+                        ReviewStarter.ensureRunning(this, "import_success")
+                        binding.tvStatus.text = getString(R.string.parse_success_and_autostart, words.size)
                         Toast.makeText(this, getString(R.string.parse_success, words.size), Toast.LENGTH_SHORT).show()
                         AppLog.info(TAG, "Import finished successfully with ${words.size} words")
                     }
@@ -119,35 +119,32 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
     }
 
-    private fun startVocabService() {
-        if (repo.isEmpty()) {
-            Toast.makeText(this, R.string.no_words, Toast.LENGTH_LONG).show()
-            return
-        }
-        startForegroundService(Intent(this, VocabService::class.java))
-        updateUi()
-    }
-
-    private fun stopVocabService() {
-        stopService(Intent(this, VocabService::class.java))
-        updateUi()
-    }
-
     private fun updateUi() {
-        val running = VocabService.isRunning
-        binding.btnStart.isEnabled = !running && !repo.isEmpty()
-        binding.btnStop.isEnabled = running
+        val count = repo.count()
+        binding.tvStatus.text = when {
+            binding.btnSelectColpkg.isEnabled.not() -> getString(R.string.parsing)
+            count <= 0 -> getString(R.string.no_words)
+            VocabService.isRunning -> getString(R.string.auto_running_status, count)
+            else -> getString(R.string.auto_ready_status, count)
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        ensureReviewRunning("activity_on_resume")
         updateUi()
     }
 
     private fun showPreviousCrashIfNeeded() {
         val crashLog = AppLog.readCrashLog()
-        if (crashLog.isNotBlank()) {
+        if (crashLog.isNotBlank() && repo.isEmpty()) {
             binding.tvStatus.text = getString(R.string.last_crash_hint)
+        }
+    }
+
+    private fun ensureReviewRunning(reason: String) {
+        if (ReviewStarter.ensureRunning(this, reason)) {
+            AppLog.info(TAG, "Auto-start requested from MainActivity, reason=$reason")
         }
     }
 
